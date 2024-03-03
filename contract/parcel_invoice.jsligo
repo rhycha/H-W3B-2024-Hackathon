@@ -1,0 +1,57 @@
+// JsLIGO doesn't have a direct equivalent to Solidity's events, but you can use other mechanisms for notifications or logging
+
+type address = string;
+type timestamp = int;
+type uint256 = int; // LIGO doesn't have uint256, int is commonly used
+
+type parcel = {
+  trackingNumber: uint256,
+  sender: address,
+  courier: address,
+  recipient: address,
+  packageDescription: string,
+  deliveryDate: timestamp,
+  status: string
+};
+
+// In LIGO, we'll use a big_map for efficient storage and access
+// big_map from trackingNumber to parcel
+let parcels: map<uint256, parcel> = new Map();
+
+// Function to initiate a parcel
+function initiateParcel(trackingNumber: uint256, courier: address, recipient: address, packageDescription: string, sender: address): map<uint256, parcel> {
+  if (parcels.has(trackingNumber)) {
+    // Parcel already exists
+    // Handle error or revert transaction
+  } else {
+    let newParcel: parcel = {
+      trackingNumber: trackingNumber,
+      sender: sender,
+      courier: courier,
+      recipient: recipient,
+      packageDescription: packageDescription,
+      deliveryDate: Date.now(), // Simplified timestamp
+      status: "Pending"
+    };
+    parcels.set(trackingNumber, newParcel);
+  }
+  return parcels;
+}
+
+// Function to update parcel status
+function updateParcelStatus(trackingNumber: uint256, status: string, sender: address): map<uint256, parcel> {
+  if (!parcels.has(trackingNumber)) {
+    // Parcel doesn't exist
+    // Handle error or revert transaction
+  } else {
+    let parcel = parcels.get(trackingNumber);
+    if (parcel.courier !== sender) {
+      // Only courier can update parcel status
+      // Handle error or revert transaction
+    } else {
+      parcel.status = status;
+      parcels.set(trackingNumber, parcel);
+    }
+  }
+  return parcels;
+}

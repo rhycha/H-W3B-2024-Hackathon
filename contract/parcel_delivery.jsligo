@@ -1,0 +1,132 @@
+// Define types and constants
+type tez = number;
+const base_reward: tez = 1;
+const weight_factor: tez = 0.2;
+const urgent_delivery_reward: tez = 2;
+
+type date = number; // Simplified for example purposes
+const now: date = Date.now(); // Simplified current date/time representation
+
+type address = string;
+type status = "open" | "matched" | "delivered" | "disputed";
+
+type tracking_update = {
+  timestamp: date,
+  location: string
+};
+
+type delivery_request = {
+  id: number,
+  sender: address,
+  pickup_location: string,
+  delivery_location: string,
+  delivery_timeframe: date,
+  reward: tez,
+  status: status,
+  matched_courier: address | null,
+  parcel_weight: number,
+  parcel_dimensions: string,
+  parcel_description: string,
+  tracking_updates: tracking_update[]
+};
+
+type courier = {
+  address: address,
+  available: boolean,
+  location: string,
+  delivery_type: string
+};
+
+// State - In a real contract, you'd use a more complex state management approach
+let couriers: courier[] = [];
+let delivery_requests: delivery_request[] = [];
+let request_counter: number = 0;
+
+// Function to calculate minimal reward
+function calculate_minimal_reward(weight: number, delivery_timeframe: date): tez {
+  let weight_reward: tez = weight * weight_factor;
+  let urgent_delivery: tez = (now + 24 * 60 * 60 * 1000 >= delivery_timeframe) ? urgent_delivery_reward : 0;
+  return base_reward + weight_reward + urgent_delivery;
+}
+
+// Entries
+function create_delivery_request(sender: address, pickup_location: string, delivery_location: string, delivery_timeframe: date, reward: tez, parcel_weight: number): void {
+  let minimal_reward: tez = calculate_minimal_reward(parcel_weight, delivery_timeframe);
+  if (now <= delivery_timeframe && reward >= minimal_reward) {
+    request_counter++;
+    let new_request: delivery_request = {
+      id: request_counter,
+      sender: sender,
+      pickup_location: pickup_location,
+      delivery_location: delivery_location,
+      delivery_timeframe: delivery_timeframe,
+      reward: reward,
+      status: "open",
+      matched_courier: null,
+      parcel_weight: parcel_weight,
+      parcel_dimensions: "",
+      parcel_description: "",
+      tracking_updates: []
+    };
+    delivery_requests.push(new_request);
+  }
+}
+
+// Update courier availability
+function update_courier_availability(courier_address: address, available: boolean, location: string, delivery_type: string): void {
+  const index = couriers.findIndex(c => c.address === courier_address);
+  if (index !== -1) {
+    couriers[index] = { ...couriers[index], available, location, delivery_type };
+  } else {
+    couriers.push({ address: courier_address, available, location, delivery_type });
+  }
+}
+
+// Match delivery request
+function match_delivery_request(request_id: number, courier_address: address): void {
+  const requestIndex = delivery_requests.findIndex(req => req.id === request_id && req.status === "open");
+  const courierIndex = couriers.findIndex(c => c.address === courier_address && c.available);
+
+  if (requestIndex !== -1 && courierIndex !== -1) {
+    if (couriers[courierIndex].location === delivery_requests[requestIndex].pickup_location && 
+        couriers[courierIndex].delivery_type === delivery_requests[requestIndex].parcel_dimensions) {
+      delivery_requests[requestIndex] = {
+        ...delivery_requests[requestIndex],
+        status: "matched",
+        matched_courier: courier_address,
+      };
+      couriers[courierIndex] = { ...couriers[courierIndex], available: false };
+    }
+  }
+}
+
+// Confirm delivery
+function confirm_delivery(request_id: number, sender_address: address): void {
+  const requestIndex = delivery_requests.findIndex(req => req.id === request_id && req.sender === sender_address && req.status === "matched");
+
+  if (requestIndex !== -1) {
+    delivery_requests[requestIndex] = { ...delivery_requests[requestIndex], status: "delivered" };
+    // Here, you would also handle the transfer of funds or any other post-delivery logic.
+  }
+}
+
+// Raise dispute
+function raise_dispute(request_id: number, party_address: address): void {
+  const requestIndex = delivery_requests.findIndex(req => req.id === request_id && (req.status === "matched" || req.status === "delivered"));
+
+  if (requestIndex !== -1) {
+    delivery_requests[requestIndex] = { ...delivery_requests[requestIndex], status: "disputed" };
+    // Additional logic for handling disputes can be added here.
+  }
+}
+
+// Update tracking information
+function update_tracking(request_id: number, courier_address: address, location: string): void {
+  const requestIndex = delivery_requests.findIndex(req => req.id === request_id && req.matched_courier === courier_address && req.status === "matched");
+
+  if (requestIndex !== -1) {
+    const newUpdate: tracking_update = { timestamp: now, location };
+    delivery_requests[requestIndex].tracking_updates.push(newUpdate);
+  }
+}
+

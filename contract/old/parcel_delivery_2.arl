@@ -1,0 +1,122 @@
+archetype enhanced_parcel_delivery_contract
+
+constant base_reward : tez = 1tz;
+constant weight_factor : tez = 0.2tz;
+constant urgent_delivery_reward : tez = 2tz;
+
+function calculate_minimal_reward(weight : int, delivery_timeframe : date) : tez {
+  let weight_reward = tez(weight) * weight_factor;
+  let urgent_delivery = if now + 24h >= delivery_timeframe then urgent_delivery_reward else 0tz;
+  base_reward + weight_reward + urgent_delivery
+}
+
+type tracking_update = {
+  timestamp : date;
+  location : string;
+}
+
+
+//TODO: sender-> receiver, add the post office address
+entry create_delivery_request(sender : address, pickup_location : string, delivery_location : string, delivery_timeframe : date, reward : tez, parcel_weight : int) {
+  let minimal_reward = calculate_minimal_reward(parcel_weight, delivery_timeframe);
+  require { r1: now <= delivery_timeframe; r2: reward >= minimal_reward }
+  effect {
+    let request = {
+      id = delivery_request.count() + 1;
+      sender = sender;
+      pickup_location = pickup_location;
+      delivery_location = delivery_location;
+      delivery_timeframe = delivery_timeframe;
+      reward = reward;
+      parcel_weight = parcel_weight;
+      status = "open";
+      matched_courier = none;
+    }
+    delivery_request.add(request)
+  }
+}
+
+asset courier {
+  address : address;
+  available : bool;
+  location : string;
+  delivery_type : string;
+}
+
+asset delivery_request {
+  id : nat;
+  sender : address;
+  pickup_location : string;
+  delivery_location : string;
+  delivery_timeframe : date;
+  reward : tez;
+  status : string = "open"; // "open", "matched", "delivered", "disputed"
+  matched_courier : option<address>;
+  parcel_weight : int;
+  parcel_dimensions : string;
+  parcel_description : string;
+  tracking_updates : list<tracking_update>;
+
+}
+
+
+entry update_courier_availability(courier_address : address, available : bool, location : string, delivery_type : string) {
+  effect {
+    if courier.contains(courier_address) then
+      courier.update(courier_address, { available = available; location = location; delivery_type = delivery_type; })
+    else
+      courier.add({ address = courier_address; available = available; location = location; delivery_type = delivery_type; })
+  }
+}
+
+transition match_delivery_request(request_id : nat, courier_address : address) {
+  called by courier_address
+  require {
+    r1: courier.contains(courier_address) and courier[courier_address].available;
+    r2: delivery_request.contains(request_id) and delivery_request[request_id].status = "open";
+    r3: courier[courier_address].location = delivery_request[request_id].pickup_location; // Simplified proximity check
+    r4: courier[courier_address].delivery_type = delivery_request[request_id].delivery_type; // Delivery type compatibility
+  }
+  effect {
+    delivery_request.update(request_id, { status = "matched"; matched_courier = some(courier_address); })
+    // Lock the reward in the smart contract
+  }
+}
+
+entry confirm_delivery(request_id : nat, sender_address : address) {
+  called by sender_address
+  require {
+    r1: delivery_request.contains(request_id) and delivery_request[request_id].sender = sender_address;
+    r2: delivery_request[request_id].status = "matched";
+  }
+  effect {
+    delivery_request.update(request_id, { status = "delivered"; })
+    // Release the reward to the courier
+  }
+}
+
+// Dispute resolution logic
+entry raise_dispute(request_id : nat, party_address : address) {
+  called by party_address
+  require {
+    r1: delivery_request.contains(request_id);
+    r2: delivery_request[request_id].status = "matched" or delivery_request[request_id].status = "delivered";
+  }
+  effect {
+    delivery_request.update(request_id, { status = "disputed"; })
+    // Trigger a dispute resolution process, which could involve an external arbitrator or a predefined resolution mechanism
+  }
+}
+
+ 
+entry update_tracking(request_id : nat, courier_address : address, location : string) {
+  called by courier_address
+  require {
+    r1: delivery_request.contains(request_id) and delivery_request[request_id].matched_courier = some(courier_address);
+    r2: delivery_request[request_id].status = "matched";
+  }
+  effect {
+    let update = { timestamp = now; location = location; }
+    delivery_request.update(request_id, { tracking_updates.push(update); })
+  }
+}

@@ -1,0 +1,31 @@
+archetype package_delivery
+
+asset package {
+  id : string;
+  deadline : timestamp;
+  info : string
+}
+
+variable package_request_id : option<string> = none
+variable accepted_by : option<address> = none
+
+entry request_package(p_id : string, p_deadline : timestamp, p_info : string) {
+  require {
+    r1: package_request_id = none // Ensure no existing request is pending
+  }
+  effect {
+    // Assuming you create and store the package in the asset collection here
+    package_request_id := some(p_id)
+  }
+}
+
+entry accept_request(courier_address : address, p_id : string) {
+  require {
+    r1: package_request_id <> none; // Ensure there is an active package request
+    r2: accepted_by = none;          // Ensure the request hasn't been accepted yet
+    r3: package_request_id = some(p_id) // Ensure the request matches the package ID
+  }
+  effect {
+    accepted_by := some(courier_address); // Record the courier's address as the acceptor
+  }
+}
